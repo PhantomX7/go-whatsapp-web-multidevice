@@ -161,6 +161,46 @@ func TestSQLiteRepositoryDeletesReactionsWithMessagesAndDevices(t *testing.T) {
 	}
 }
 
+func TestGetOldestMessageReturnsEarliestDeviceScopedMessage(t *testing.T) {
+	repo := newTestSQLiteRepository(t)
+	deviceID := "device-a@s.whatsapp.net"
+	otherDeviceID := "device-b@s.whatsapp.net"
+	chatJID := "628123456789@s.whatsapp.net"
+	base := time.Date(2026, time.May, 16, 8, 0, 0, 0, time.UTC)
+
+	// Seed out of chronological order to ensure ordering, not insertion order, decides the anchor.
+	seedChatMessage(t, repo, deviceID, chatJID, "msg-newer", "newer", base.Add(2*time.Hour))
+	seedChatMessage(t, repo, deviceID, chatJID, "msg-oldest", "oldest", base)
+	seedChatMessage(t, repo, deviceID, chatJID, "msg-mid", "mid", base.Add(time.Hour))
+	// A message belonging to another device must never be selected.
+	seedChatMessage(t, repo, otherDeviceID, chatJID, "msg-other-older", "other device older", base.Add(-time.Hour))
+
+	oldest, err := repo.GetOldestMessage(deviceID, chatJID)
+	if err != nil {
+		t.Fatalf("get oldest message: %v", err)
+	}
+	if oldest == nil {
+		t.Fatal("expected an oldest message, got nil")
+	}
+	if oldest.ID != "msg-oldest" {
+		t.Fatalf("expected oldest message msg-oldest, got %q", oldest.ID)
+	}
+
+	// Empty chat returns (nil, nil) so callers can detect the no-anchor case.
+	empty, err := repo.GetOldestMessage(deviceID, "000000@s.whatsapp.net")
+	if err != nil {
+		t.Fatalf("get oldest message for empty chat: %v", err)
+	}
+	if empty != nil {
+		t.Fatalf("expected nil for chat without messages, got %q", empty.ID)
+	}
+
+	// device_id is required for data isolation.
+	if _, err := repo.GetOldestMessage("", chatJID); err == nil {
+		t.Fatal("expected error when device_id is missing")
+	}
+}
+
 func TestStoreSentMessageWithContextRequiresDeviceInContext(t *testing.T) {
 	repo := newTestSQLiteRepository(t)
 	deviceID := "6289605618749@s.whatsapp.net"

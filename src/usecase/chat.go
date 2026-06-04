@@ -13,6 +13,7 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/validations"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/appstate"
+	"go.mau.fi/whatsmeow/types"
 )
 
 type serviceChat struct {
@@ -221,6 +222,74 @@ func (service serviceChat) GetChatMessages(ctx context.Context, request domainCh
 		"limit":          request.Limit,
 		"offset":         request.Offset,
 	}).Info("Retrieved chat messages successfully")
+
+	return response, nil
+}
+
+func (service serviceChat) SyncHistory(ctx context.Context, request domainChat.SyncHistoryRequest) (response domainChat.SyncHistoryResponse, err error) {
+	if err = validations.ValidateSyncHistory(ctx, &request); err != nil {
+		return response, err
+	}
+
+	client := whatsapp.ClientFromContext(ctx)
+	if client == nil {
+		return response, pkgError.ErrWaCLI
+	}
+
+	// Validate JID and ensure connection
+	targetJID, err := utils.ValidateJidWithLogin(client, request.ChatJID)
+	if err != nil {
+		return response, err
+	}
+
+	deviceID := deviceIDFromContext(ctx)
+	if deviceID == "" {
+		return response, fmt.Errorf("device identification required")
+	}
+
+	// On-demand history sync fetches messages immediately before a known message,
+	// so we anchor the request on the oldest message we already have for this chat.
+	oldest, err := service.chatStorageRepo.GetOldestMessage(deviceID, request.ChatJID)
+	if err != nil {
+		logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to get oldest message for history sync")
+		return response, err
+	}
+	if oldest == nil {
+		return response, fmt.Errorf("no stored messages for chat %s yet; cannot anchor history sync (open the chat to receive recent messages first)", request.ChatJID)
+	}
+
+	lastKnownInfo := &types.MessageInfo{
+		MessageSource: types.MessageSource{
+			Chat:     targetJID,
+			IsFromMe: oldest.IsFromMe,
+			IsGroup:  targetJID.Server == types.GroupServer,
+		},
+		ID:        oldest.ID,
+		Timestamp: oldest.Timestamp,
+	}
+
+	// Build and send the on-demand history sync request to the primary device.
+	// The response arrives asynchronously as an events.HistorySync of type ON_DEMAND.
+	historyMsg := client.BuildHistorySyncRequest(lastKnownInfo, request.Count)
+	if _, err = client.SendPeerMessage(ctx, historyMsg); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"chat_jid": request.ChatJID,
+			"count":    request.Count,
+		}).Error("Failed to send history sync request")
+		return response, err
+	}
+
+	response.Status = "success"
+	response.ChatJID = request.ChatJID
+	response.Count = request.Count
+	response.OldestMsgID = oldest.ID
+	response.Message = fmt.Sprintf("Requested up to %d older messages before %s; they will be stored asynchronously when the phone responds", request.Count, oldest.Timestamp.Format(time.RFC3339))
+
+	logrus.WithFields(logrus.Fields{
+		"chat_jid":      request.ChatJID,
+		"count":         request.Count,
+		"oldest_msg_id": oldest.ID,
+	}).Info("History sync request sent successfully")
 
 	return response, nil
 }

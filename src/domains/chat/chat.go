@@ -92,6 +92,20 @@ type SetDisappearingTimerResponse struct {
 	TimerSeconds uint32 `json:"timer_seconds"`
 }
 
+// Sync History operations (on-demand retrieval of older messages)
+type SyncHistoryRequest struct {
+	ChatJID string `json:"chat_jid" uri:"chat_jid"`
+	Count   int    `json:"count"`
+}
+
+type SyncHistoryResponse struct {
+	Status      string `json:"status"`
+	Message     string `json:"message"`
+	ChatJID     string `json:"chat_jid"`
+	Count       int    `json:"count"`
+	OldestMsgID string `json:"oldest_message_id"`
+}
+
 // Archive Chat operations
 type ArchiveChatRequest struct {
 	ChatJID  string `json:"chat_jid" uri:"chat_jid"`

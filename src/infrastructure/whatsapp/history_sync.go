@@ -67,8 +67,9 @@ func processHistorySync(ctx context.Context, data *waHistorySync.HistorySync, ch
 	log.Infof("Processing history sync type: %s", syncType.String())
 
 	switch syncType {
-	case waHistorySync.HistorySync_INITIAL_BOOTSTRAP, waHistorySync.HistorySync_RECENT:
-		// Process conversation messages
+	case waHistorySync.HistorySync_INITIAL_BOOTSTRAP, waHistorySync.HistorySync_RECENT, waHistorySync.HistorySync_ON_DEMAND:
+		// Process conversation messages. ON_DEMAND is delivered in response to a
+		// BuildHistorySyncRequest (see chat usecase SyncHistory) and carries older messages.
 		return processConversationMessages(ctx, data, chatStorageRepo, client)
 	case waHistorySync.HistorySync_PUSH_NAME:
 		// Process push names to update chat names

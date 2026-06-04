@@ -91,6 +91,24 @@ func validateTimerValue(value any) error {
 	return pkgError.ValidationError("timer_seconds must be one of: 0 (off), 86400 (24h), 604800 (7d), 7776000 (90d)")
 }
 
+func ValidateSyncHistory(ctx context.Context, request *domainChat.SyncHistoryRequest) error {
+	// Default to WhatsApp's recommended on-demand batch size
+	if request.Count == 0 {
+		request.Count = 50
+	}
+
+	err := validation.ValidateStructWithContext(ctx, request,
+		validation.Field(&request.ChatJID, validation.Required),
+		validation.Field(&request.Count, validation.Min(1), validation.Max(100)),
+	)
+
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
+	}
+
+	return nil
+}
+
 func ValidateArchiveChat(ctx context.Context, request *domainChat.ArchiveChatRequest) error {
 	err := validation.ValidateStructWithContext(ctx, request,
 		validation.Field(&request.ChatJID, validation.Required),

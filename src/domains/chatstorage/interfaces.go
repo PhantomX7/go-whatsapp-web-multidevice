@@ -27,6 +27,7 @@ type IChatStorageRepository interface {
 	StoreMessageEdit(edit *MessageEdit) error
 	StoreMessagesBatch(messages []*Message) error
 	GetMessageByID(id string) (*Message, error) // New method for efficient ID-only search
+	GetOldestMessage(deviceID, chatJID string) (*Message, error) // Oldest stored message for a chat (anchor for on-demand history sync)
 	GetMessageEdits(originalMessageID, deviceID string) ([]*MessageEdit, error)
 	GetMessages(filter *MessageFilter) ([]*Message, error)
 	SearchMessages(deviceID, chatJID, searchText string, limit int) ([]*Message, error) // Database-level search with device isolation

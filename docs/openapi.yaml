@@ -2274,7 +2274,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
-  
+  /chat/{chat_jid}/sync:
+    post:
+      operationId: syncChatHistory
+      tags:
+        - chat
+      summary: Retrieve older messages for a chat on demand
+      description: >-
+        Request additional historical messages for a chat from the phone's
+        primary device. WhatsApp's automatic history sync only delivers a
+        limited recent window; this triggers an on-demand history sync that
+        fetches up to `count` messages immediately before the oldest message
+        already stored for the chat. The chat must already have at least one
+        stored message to anchor the request. Retrieved messages are stored
+        asynchronously when the phone responds, so they will appear in
+        subsequent calls to GET /chat/{chat_jid}/messages. Call repeatedly to
+        page further back in time.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - in: path
+          name: chat_jid
+          schema:
+            type: string
+          required: true
+          description: Chat JID (e.g., phone@s.whatsapp.net for individual or groupid@g.us for group)
+          example: '6289685028129@s.whatsapp.net'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 50
+                  example: 50
+                  description: Number of older messages to request (defaults to WhatsApp's recommended 50).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncChatHistoryResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBadRequest'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorUnauthorized'
+        '404':
+          description: Chat Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNotFound'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorInternalServer'
+
   /group/info:
     get:
       operationId: groupInfo
@@ -4391,6 +4461,36 @@ components:
             archived:
               type: boolean
               example: true
+    SyncChatHistoryResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 200
+        code:
+          type: string
+          example: SUCCESS
+        message:
+          type: string
+          example: Requested up to 50 older messages before 2026-05-16T08:00:00Z; they will be stored asynchronously when the phone responds
+        results:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            message:
+              type: string
+              example: Requested up to 50 older messages before 2026-05-16T08:00:00Z; they will be stored asynchronously when the phone responds
+            chat_jid:
+              type: string
+              example: '6289685028129@s.whatsapp.net'
+            count:
+              type: integer
+              example: 50
+            oldest_message_id:
+              type: string
+              example: '3EB0XXXXXXXXXXXXXXXX'
     GroupInfoResponse:
       type: object
       properties:
