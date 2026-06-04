@@ -161,6 +161,7 @@
     <div class="ui three column doubling grid cards">
         <chat-pin-manager></chat-pin-manager>
         <chat-disappearing-manager></chat-disappearing-manager>
+        <chat-sync-history></chat-sync-history>
         <chat-list></chat-list>
         <chat-messages></chat-messages>
     </div>
@@ -246,6 +247,7 @@
     import AccountBusinessProfile from "{{ .AppBasePath }}/components/AccountBusinessProfile.js";
     import ChatPinManager from "{{ .AppBasePath }}/components/ChatPinManager.js";
     import ChatDisappearingManager from "{{ .AppBasePath }}/components/ChatDisappearingManager.js";
+    import ChatSyncHistory from "{{ .AppBasePath }}/components/ChatSyncHistory.js";
     import ChatList from "{{ .AppBasePath }}/components/ChatList.js";
     import ChatMessages from "{{ .AppBasePath }}/components/ChatMessages.js";
     import DeviceManager from "{{ .AppBasePath }}/components/DeviceManager.js";
@@ -277,7 +279,7 @@
             GroupList, GroupCreate, GroupJoinWithLink, GroupInfoFromLink, GroupAddParticipants, GroupSetPhoto, GroupSetName, GroupSetLocked, GroupSetAnnounce, GroupSetTopic, GroupGetInviteLink, GroupInfo,
             NewsletterList,
             AccountAvatar, AccountUserInfo, AccountPrivacy, AccountChangeAvatar, AccountContact, AccountChangePushName, AccountUserCheck, AccountBusinessProfile,
-            ChatPinManager, ChatDisappearingManager, ChatList, ChatMessages,
+            ChatPinManager, ChatDisappearingManager, ChatSyncHistory, ChatList, ChatMessages,
             DeviceManager
         },
         delimiters: ['[[', ']]'],

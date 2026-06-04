@@ -132,6 +132,17 @@ func restServer(_ *cobra.Command, _ []string) {
 		websocket.RegisterRoutes(r, appUsecase)
 	}
 
+	// Serve the OpenAPI spec (bundled into the binary from src/views/openapi.yaml).
+	// Registered before the device middleware group so it needs no X-Device-Id.
+	apiGroup.Get("/openapi.yaml", func(c *fiber.Ctx) error {
+		data, err := EmbedViews.ReadFile("views/openapi.yaml")
+		if err != nil {
+			return c.Status(http.StatusNotFound).SendString("OpenAPI spec not found")
+		}
+		c.Set(fiber.HeaderContentType, "application/yaml")
+		return c.Send(data)
+	})
+
 	// Device management routes (no device_id required)
 	rest.InitRestDevice(apiGroup, deviceUsecase)
 

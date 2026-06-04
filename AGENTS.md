@@ -24,10 +24,10 @@ go-whatsapp-web-multidevice/
 │   │   ├── whatsapp/            # Device manager, events, presence pulse, JID utilities
 │   │   ├── chatstorage/         # chat/message/device SQL repository
 │   │   └── chatwoot/            # Chatwoot REST sync and direct PG import
-│   ├── views/                   # Embedded Vue 3 plain JS UI
+│   ├── views/                   # Embedded Vue 3 plain JS UI + openapi.yaml (served at /openapi.yaml)
 │   ├── statics/                 # Runtime media, QR codes, send items
 │   └── storages/                # Runtime SQLite DBs and history dumps
-├── docs/                        # OpenAPI, webhook payload docs, SDK config
+├── docs/                        # Webhook payload docs, SDK config
 ├── docker/                      # Multi-stage Alpine image and entrypoint
 └── .github/workflows/           # Docker publish, release, latest promotion
 ```

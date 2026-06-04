@@ -62,7 +62,7 @@ Download:
 
 ## Feature
 
-- Send WhatsApp message via http API, [docs/openapi.yml](./docs/openapi.yaml) for more details
+- Send WhatsApp message via http API, [src/views/openapi.yaml](./src/views/openapi.yaml) for more details
 - **MCP (Model Context Protocol) Server Support** - Integrate with AI agents and tools using standardized protocol
 - Mention someone
   - `@phoneNumber`
@@ -526,7 +526,7 @@ You can fork or edit this source code !
 
 ### HTTP REST API
 
-- Check [docs/openapi.yml](./docs/openapi.yaml) for detailed API specifications.
+- Check [src/views/openapi.yaml](./src/views/openapi.yaml) for detailed API specifications. The running server also serves it at `GET /openapi.yaml`.
 - Use [SwaggerEditor](https://editor.swagger.io) to visualize the API.
 - Generate HTTP clients using [openapi-generator](https://openapi-generator.tech/#try).
 

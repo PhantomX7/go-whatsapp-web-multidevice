@@ -51,6 +51,32 @@ func (r *SQLiteRepository) StoreChat(chat *domainChatStorage.Chat) error {
 	return err
 }
 
+// RepairChatLastMessageTimes recomputes each chat's last_message_time from the
+// newest message it actually has. It fixes rows that an on-demand history sync
+// regressed to an older timestamp (see processConversationMessages). Only chats
+// whose stored time is behind their newest message are touched, so it is a no-op
+// on healthy databases and safe to run on every startup. Returns the number of
+// chats repaired.
+func (r *SQLiteRepository) RepairChatLastMessageTimes() (int64, error) {
+	result, err := r.db.Exec(`
+		UPDATE chats
+		SET last_message_time = (
+			SELECT MAX(m.timestamp) FROM messages m
+			WHERE m.chat_jid = chats.jid AND m.device_id = chats.device_id
+		)
+		WHERE EXISTS (
+			SELECT 1 FROM messages m
+			WHERE m.chat_jid = chats.jid AND m.device_id = chats.device_id
+			AND m.timestamp > chats.last_message_time
+		)
+	`)
+	if err != nil {
+		return 0, err
+	}
+	affected, _ := result.RowsAffected()
+	return affected, nil
+}
+
 // GetChat retrieves a chat by JID
 func (r *SQLiteRepository) GetChat(jid string) (*domainChatStorage.Chat, error) {
 	query := `

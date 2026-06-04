@@ -201,6 +201,59 @@ func TestGetOldestMessageReturnsEarliestDeviceScopedMessage(t *testing.T) {
 	}
 }
 
+func TestRepairChatLastMessageTimesFixesRegressedChats(t *testing.T) {
+	repo := newTestSQLiteRepository(t)
+	deviceID := "device-a@s.whatsapp.net"
+	chatJID := "628123456789@s.whatsapp.net"
+	newest := time.Date(2026, time.May, 20, 9, 0, 0, 0, time.UTC)
+	older := time.Date(2026, time.May, 1, 8, 0, 0, 0, time.UTC)
+
+	// A message exists at the newer time (seedChatMessage also sets the chat time).
+	seedChatMessage(t, repo, deviceID, chatJID, "msg-new", "newest", newest)
+	// Simulate the bug: the chat row was regressed to an older time (and archived).
+	if err := repo.StoreChat(&domainChatStorage.Chat{
+		DeviceID:        deviceID,
+		JID:             chatJID,
+		Name:            "Chat A",
+		LastMessageTime: older,
+		Archived:        true,
+	}); err != nil {
+		t.Fatalf("store regressed chat: %v", err)
+	}
+
+	repaired, err := repo.RepairChatLastMessageTimes()
+	if err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	if repaired != 1 {
+		t.Fatalf("expected 1 chat repaired, got %d", repaired)
+	}
+
+	chat, err := repo.GetChatByDevice(deviceID, chatJID)
+	if err != nil || chat == nil {
+		t.Fatalf("get chat: %v", err)
+	}
+	if !chat.LastMessageTime.Equal(newest) {
+		t.Fatalf("last_message_time not repaired: got %s, want %s", chat.LastMessageTime, newest)
+	}
+	// Repair must not touch unrelated fields.
+	if !chat.Archived {
+		t.Fatal("repair should not change archived flag")
+	}
+	if chat.Name != "Chat A" {
+		t.Fatalf("repair should not change name: got %q", chat.Name)
+	}
+
+	// Idempotent: a second run on a now-healthy db repairs nothing.
+	repaired, err = repo.RepairChatLastMessageTimes()
+	if err != nil {
+		t.Fatalf("repair (2nd): %v", err)
+	}
+	if repaired != 0 {
+		t.Fatalf("expected 0 chats repaired on healthy db, got %d", repaired)
+	}
+}
+
 func TestStoreSentMessageWithContextRequiresDeviceInContext(t *testing.T) {
 	repo := newTestSQLiteRepository(t)
 	deviceID := "6289605618749@s.whatsapp.net"

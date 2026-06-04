@@ -276,6 +276,26 @@ func processConversationMessages(ctx context.Context, data *waHistorySync.Histor
 				EphemeralExpiration: ephemeralExpiration,
 			}
 
+			// Merge with any existing chat so syncing OLDER messages (e.g. on-demand
+			// history sync) doesn't regress newer state. StoreChat overwrites the row,
+			// so without this the chat's last_message_time would jump back to the old
+			// batch and archived/name/ephemeral would be reset.
+			if existing, err := chatStorageRepo.GetChatByDevice(deviceID, chatJID); err == nil && existing != nil {
+				if existing.LastMessageTime.After(chat.LastMessageTime) {
+					chat.LastMessageTime = existing.LastMessageTime
+				}
+				// History sync conversations don't carry the archived flag reliably.
+				chat.Archived = existing.Archived
+				// Keep the existing display name when the sync didn't provide a better one.
+				if chat.Name == "" || chat.Name == chatJID {
+					chat.Name = existing.Name
+				}
+				// Keep the existing ephemeral timer when the sync reports none.
+				if chat.EphemeralExpiration == 0 {
+					chat.EphemeralExpiration = existing.EphemeralExpiration
+				}
+			}
+
 			// Store or update the chat
 			if err := chatStorageRepo.StoreChat(chat); err != nil {
 				log.Warnf("Failed to store chat %s: %v", chatJID, err)

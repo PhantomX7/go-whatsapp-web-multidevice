@@ -45,6 +45,9 @@ type IChatStorageRepository interface {
 	GetChatNameWithPushNameByDevice(deviceID string, jid types.JID, chatJID string, senderUser string, pushName string) string
 	GetStorageStatistics() (chatCount int64, messageCount int64, err error)
 
+	// Maintenance operations
+	RepairChatLastMessageTimes() (int64, error) // Recompute last_message_time from newest message (fixes history-sync regressions)
+
 	// Cleanup operations
 	TruncateAllChats() error
 	TruncateAllDataWithLogging(logPrefix string) error

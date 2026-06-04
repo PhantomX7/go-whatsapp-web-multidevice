@@ -400,6 +400,14 @@ func initApp() {
 	chatStorageRepo = chatstorage.NewStorageRepository(chatStorageDB)
 	chatStorageRepo.InitializeSchema()
 
+	// One-time, idempotent repair: fix chats whose last_message_time was regressed
+	// by an on-demand history sync (no-op on healthy databases).
+	if repaired, err := chatStorageRepo.RepairChatLastMessageTimes(); err != nil {
+		logrus.Warnf("failed to repair chat last_message_time: %v", err)
+	} else if repaired > 0 {
+		logrus.Infof("Repaired last_message_time for %d chat(s) regressed by history sync", repaired)
+	}
+
 	whatsappDB := whatsapp.InitWaDB(ctx, config.DBURI)
 	var keysDB *sqlstore.Container
 	if config.DBKeysURI != "" {

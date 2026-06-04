@@ -176,6 +176,10 @@ func (r *deviceChatStorage) GetStorageStatistics() (chatCount int64, messageCoun
 	return r.base.GetStorageStatistics()
 }
 
+func (r *deviceChatStorage) RepairChatLastMessageTimes() (int64, error) {
+	return r.base.RepairChatLastMessageTimes()
+}
+
 func (r *deviceChatStorage) TruncateAllChats() error {
 	return r.base.TruncateAllChats()
 }
