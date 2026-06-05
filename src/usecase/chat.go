@@ -294,6 +294,81 @@ func (service serviceChat) SyncHistory(ctx context.Context, request domainChat.S
 	return response, nil
 }
 
+func (service serviceChat) RepairMedia(ctx context.Context, request domainChat.RepairMediaRequest) (response domainChat.RepairMediaResponse, err error) {
+	if err = validations.ValidateRepairMedia(ctx, &request); err != nil {
+		return response, err
+	}
+
+	client := whatsapp.ClientFromContext(ctx)
+	if client == nil {
+		return response, pkgError.ErrWaCLI
+	}
+
+	// Validate JID and ensure connection
+	targetJID, err := utils.ValidateJidWithLogin(client, request.ChatJID)
+	if err != nil {
+		return response, err
+	}
+
+	deviceID := deviceIDFromContext(ctx)
+	if deviceID == "" {
+		return response, fmt.Errorf("device identification required")
+	}
+
+	// Media that has a key but no direct_path can't be downloaded; ask the phone
+	// to re-upload it. The fresh direct_path arrives asynchronously as an
+	// events.MediaRetry and is stored by handleMediaRetry.
+	messages, err := service.chatStorageRepo.GetMediaMessagesForRepair(deviceID, request.ChatJID, request.Limit)
+	if err != nil {
+		logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to list media messages for repair")
+		return response, err
+	}
+
+	isGroup := targetJID.Server == types.GroupServer
+	requested := 0
+	for _, message := range messages {
+		if len(message.MediaKey) == 0 {
+			continue
+		}
+
+		senderJID := types.EmptyJID
+		if message.Sender != "" {
+			if parsed, perr := types.ParseJID(message.Sender); perr == nil {
+				senderJID = parsed
+			}
+		}
+
+		info := &types.MessageInfo{
+			MessageSource: types.MessageSource{
+				Chat:     targetJID,
+				Sender:   senderJID,
+				IsFromMe: message.IsFromMe,
+				IsGroup:  isGroup,
+			},
+			ID: message.ID,
+		}
+
+		if err := client.SendMediaRetryReceipt(ctx, info, message.MediaKey); err != nil {
+			logrus.WithError(err).WithField("message_id", message.ID).Warn("Failed to send media retry receipt")
+			continue
+		}
+		requested++
+	}
+
+	response.Status = "success"
+	response.ChatJID = request.ChatJID
+	response.Requested = requested
+	response.Message = fmt.Sprintf("Requested re-upload of %d media message(s); refreshed media will be downloadable shortly after the phone responds", requested)
+
+	logrus.WithFields(logrus.Fields{
+		"chat_jid":   request.ChatJID,
+		"candidates": len(messages),
+		"requested":  requested,
+	}).Info("Media repair requested successfully")
+
+	return response, nil
+}
+
 func deviceIDFromContext(ctx context.Context) string {
 	if inst, ok := whatsapp.DeviceFromContext(ctx); ok && inst != nil {
 		if jid := inst.JID(); jid != "" {

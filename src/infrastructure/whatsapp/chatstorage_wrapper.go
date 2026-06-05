@@ -111,6 +111,22 @@ func (r *deviceChatStorage) GetOldestMessage(deviceID, chatJID string) (*domainC
 	return r.base.GetOldestMessage(targetDeviceID, chatJID)
 }
 
+func (r *deviceChatStorage) GetMediaMessagesForRepair(deviceID, chatJID string, limit int) ([]*domainChatStorage.Message, error) {
+	targetDeviceID := deviceID
+	if targetDeviceID == "" {
+		targetDeviceID = r.deviceID
+	}
+	return r.base.GetMediaMessagesForRepair(targetDeviceID, chatJID, limit)
+}
+
+func (r *deviceChatStorage) UpdateMessageMediaReference(deviceID, id, chatJID, directPath string) error {
+	targetDeviceID := deviceID
+	if targetDeviceID == "" {
+		targetDeviceID = r.deviceID
+	}
+	return r.base.UpdateMessageMediaReference(targetDeviceID, id, chatJID, directPath)
+}
+
 func (r *deviceChatStorage) GetMessageEdits(originalMessageID, deviceID string) ([]*domainChatStorage.MessageEdit, error) {
 	targetDeviceID := deviceID
 	if targetDeviceID == "" {

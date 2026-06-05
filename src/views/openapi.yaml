@@ -2360,6 +2360,74 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorInternalServer'
+  /chat/{chat_jid}/media/repair:
+    post:
+      operationId: repairChatMedia
+      tags:
+        - chat
+      summary: Re-fetch broken media references for a chat (no re-login)
+      description: >-
+        Repair media (images/videos/audio/documents/stickers) that can no longer
+        be downloaded because the stored reference is missing or stale. For each
+        stored media message in the chat that has a media key but no direct_path,
+        this asks the phone to re-upload the media (a media retry). The phone's
+        response arrives asynchronously and refreshes the message's direct_path,
+        after which the media becomes downloadable again via
+        GET /message/{message_id}/download — all without re-pairing the device.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - in: path
+          name: chat_jid
+          schema:
+            type: string
+          required: true
+          description: Chat JID (e.g., phone@s.whatsapp.net for individual or groupid@g.us for group)
+          example: '6289685028129@s.whatsapp.net'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 500
+                  default: 50
+                  example: 50
+                  description: Max number of media messages to request re-upload for (most recent first).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepairChatMediaResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBadRequest'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorUnauthorized'
+        '404':
+          description: Chat Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNotFound'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorInternalServer'
 
   /group/info:
     get:
@@ -4507,6 +4575,33 @@ components:
             oldest_message_id:
               type: string
               example: '3EB0XXXXXXXXXXXXXXXX'
+    RepairChatMediaResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 200
+        code:
+          type: string
+          example: SUCCESS
+        message:
+          type: string
+          example: Requested re-upload of 12 media message(s); refreshed media will be downloadable shortly after the phone responds
+        results:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            message:
+              type: string
+              example: Requested re-upload of 12 media message(s); refreshed media will be downloadable shortly after the phone responds
+            chat_jid:
+              type: string
+              example: '6289685028129@s.whatsapp.net'
+            requested:
+              type: integer
+              example: 12
     GroupInfoResponse:
       type: object
       properties:

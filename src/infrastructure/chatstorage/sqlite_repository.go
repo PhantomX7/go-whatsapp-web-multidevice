@@ -155,6 +155,61 @@ func (r *SQLiteRepository) GetOldestMessage(deviceID, chatJID string) (*domainCh
 	return message, err
 }
 
+// GetMediaMessagesForRepair returns media messages for a chat that still have a
+// media_key but no direct_path. These can't be downloaded (whatsmeow needs
+// direct_path), so they are candidates for a media retry request which fetches a
+// fresh direct_path from the phone without re-pairing.
+func (r *SQLiteRepository) GetMediaMessagesForRepair(deviceID, chatJID string, limit int) ([]*domainChatStorage.Message, error) {
+	if deviceID == "" {
+		return nil, fmt.Errorf("device_id is required for message queries (data isolation)")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+
+	query := `
+		SELECT id, chat_jid, device_id, sender, content, timestamp, is_from_me,
+			media_type, call_metadata, filename, url, media_key, file_sha256,
+			file_enc_sha256, file_length, referral_metadata, direct_path, created_at, updated_at
+		FROM messages
+		WHERE chat_jid = ? AND device_id = ?
+			AND media_type NOT IN ('', 'call')
+			AND media_key IS NOT NULL AND length(media_key) > 0
+			AND (direct_path IS NULL OR direct_path = '')
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`
+
+	rows, err := r.db.Query(query, chatJID, deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []*domainChatStorage.Message
+	for rows.Next() {
+		message, err := r.scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	return messages, rows.Err()
+}
+
+// UpdateMessageMediaReference refreshes a stored message's direct_path (e.g. after
+// a successful media retry), so the media can be downloaded again.
+func (r *SQLiteRepository) UpdateMessageMediaReference(deviceID, id, chatJID, directPath string) error {
+	if deviceID == "" {
+		return fmt.Errorf("device_id is required for message updates (data isolation)")
+	}
+	_, err := r.db.Exec(`
+		UPDATE messages SET direct_path = ?, updated_at = ?
+		WHERE id = ? AND chat_jid = ? AND device_id = ?
+	`, directPath, time.Now(), id, chatJID, deviceID)
+	return err
+}
+
 // GetMessageByIDAndDevice retrieves a message by its ID scoped to a specific device,
 // so a message ID belonging to another device cannot be read from device-isolated flows.
 func (r *SQLiteRepository) GetMessageByIDAndDevice(deviceID, id string) (*domainChatStorage.Message, error) {

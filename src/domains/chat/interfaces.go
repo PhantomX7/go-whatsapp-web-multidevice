@@ -12,4 +12,5 @@ type IChatUsecase interface {
 	SetDisappearingTimer(ctx context.Context, request SetDisappearingTimerRequest) (response SetDisappearingTimerResponse, err error)
 	ArchiveChat(ctx context.Context, request ArchiveChatRequest) (response ArchiveChatResponse, err error)
 	SyncHistory(ctx context.Context, request SyncHistoryRequest) (response SyncHistoryResponse, err error)
+	RepairMedia(ctx context.Context, request RepairMediaRequest) (response RepairMediaResponse, err error)
 }

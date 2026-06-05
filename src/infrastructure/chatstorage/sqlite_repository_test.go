@@ -308,6 +308,71 @@ func TestMediaDirectPathRoundTrips(t *testing.T) {
 	}
 }
 
+func TestGetMediaMessagesForRepairAndUpdateReference(t *testing.T) {
+	repo := newTestSQLiteRepository(t)
+	deviceID := "device-a@s.whatsapp.net"
+	chatJID := "628123456789@s.whatsapp.net"
+	ts := time.Date(2026, time.May, 16, 8, 0, 0, 0, time.UTC)
+
+	if err := repo.StoreChat(&domainChatStorage.Chat{DeviceID: deviceID, JID: chatJID, Name: chatJID, LastMessageTime: ts}); err != nil {
+		t.Fatalf("store chat: %v", err)
+	}
+
+	store := func(id, mediaType, directPath string, key []byte, offset time.Duration) {
+		if err := repo.StoreMessage(&domainChatStorage.Message{
+			ID: id, ChatJID: chatJID, DeviceID: deviceID, Sender: "628999999999@s.whatsapp.net",
+			Timestamp: ts.Add(offset), MediaType: mediaType, DirectPath: directPath, MediaKey: key,
+		}); err != nil {
+			t.Fatalf("store message %s: %v", id, err)
+		}
+	}
+
+	// Candidate: media + key + no direct_path.
+	store("broken-1", "image", "", []byte("key-1"), time.Minute)
+	// Not a candidate: already has direct_path.
+	store("ok-1", "image", "/v/already.enc", []byte("key-2"), 2*time.Minute)
+	// Not a candidate: no media key (can't decrypt a retry).
+	store("nokey-1", "video", "", nil, 3*time.Minute)
+	// Not a candidate: plain text (no media).
+	if err := repo.StoreMessage(&domainChatStorage.Message{
+		ID: "text-1", ChatJID: chatJID, DeviceID: deviceID, Sender: "628999999999@s.whatsapp.net",
+		Timestamp: ts.Add(4 * time.Minute), Content: "hello",
+	}); err != nil {
+		t.Fatalf("store text: %v", err)
+	}
+
+	candidates, err := repo.GetMediaMessagesForRepair(deviceID, chatJID, 50)
+	if err != nil {
+		t.Fatalf("get repair candidates: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].ID != "broken-1" {
+		ids := make([]string, len(candidates))
+		for i, c := range candidates {
+			ids[i] = c.ID
+		}
+		t.Fatalf("expected only broken-1 as candidate, got %v", ids)
+	}
+
+	// After updating the reference, it's no longer a candidate (idempotent).
+	if err := repo.UpdateMessageMediaReference(deviceID, "broken-1", chatJID, "/v/refreshed.enc"); err != nil {
+		t.Fatalf("update media reference: %v", err)
+	}
+	got, err := repo.GetMessageByID("broken-1")
+	if err != nil || got == nil {
+		t.Fatalf("get broken-1: %v", err)
+	}
+	if got.DirectPath != "/v/refreshed.enc" {
+		t.Fatalf("direct_path not updated: got %q", got.DirectPath)
+	}
+	again, err := repo.GetMediaMessagesForRepair(deviceID, chatJID, 50)
+	if err != nil {
+		t.Fatalf("get repair candidates (2nd): %v", err)
+	}
+	if len(again) != 0 {
+		t.Fatalf("expected no candidates after repair, got %d", len(again))
+	}
+}
+
 func TestStoreSentMessageWithContextRequiresDeviceInContext(t *testing.T) {
 	repo := newTestSQLiteRepository(t)
 	deviceID := "6289605618749@s.whatsapp.net"

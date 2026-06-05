@@ -29,6 +29,8 @@ type IChatStorageRepository interface {
 	GetMessageByID(id string) (*Message, error)                    // New method for efficient ID-only search
 	GetMessageByIDAndDevice(deviceID, id string) (*Message, error) // Device-scoped ID lookup for device-isolated flows
 	GetOldestMessage(deviceID, chatJID string) (*Message, error)   // Oldest stored message for a chat (anchor for on-demand history sync)
+	GetMediaMessagesForRepair(deviceID, chatJID string, limit int) ([]*Message, error) // Media messages missing a direct_path (candidates for media retry)
+	UpdateMessageMediaReference(deviceID, id, chatJID, directPath string) error         // Refresh a message's direct_path after a media retry
 	GetMessageEdits(originalMessageID, deviceID string) ([]*MessageEdit, error)
 	GetMessages(filter *MessageFilter) ([]*Message, error)
 	SearchMessages(deviceID, chatJID, searchText string, limit int) ([]*Message, error) // Database-level search with device isolation

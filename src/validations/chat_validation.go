@@ -109,6 +109,24 @@ func ValidateSyncHistory(ctx context.Context, request *domainChat.SyncHistoryReq
 	return nil
 }
 
+func ValidateRepairMedia(ctx context.Context, request *domainChat.RepairMediaRequest) error {
+	// Default to a sensible batch size of media-retry requests.
+	if request.Limit == 0 {
+		request.Limit = 50
+	}
+
+	err := validation.ValidateStructWithContext(ctx, request,
+		validation.Field(&request.ChatJID, validation.Required),
+		validation.Field(&request.Limit, validation.Min(1), validation.Max(500)),
+	)
+
+	if err != nil {
+		return pkgError.ValidationError(err.Error())
+	}
+
+	return nil
+}
+
 func ValidateArchiveChat(ctx context.Context, request *domainChat.ArchiveChatRequest) error {
 	err := validation.ValidateStructWithContext(ctx, request,
 		validation.Field(&request.ChatJID, validation.Required),

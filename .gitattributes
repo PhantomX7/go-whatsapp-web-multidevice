@@ -1,0 +1,5 @@
+# Shell scripts must use LF so they can be exec'd inside Linux containers.
+# Without this, Windows checkouts (core.autocrlf=true) produce CRLF and Docker
+# fails with: exec /entrypoint.sh: no such file or directory
+*.sh text eol=lf
+docker/entrypoint.sh text eol=lf

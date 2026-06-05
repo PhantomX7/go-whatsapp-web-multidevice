@@ -55,6 +55,8 @@ func handler(ctx context.Context, instance *DeviceInstance, rawEvt any) {
 		handleChatPresence(ctx, evt, instance.JID(), client)
 	case *events.HistorySync:
 		handleHistorySync(ctx, evt, chatStorageRepo, client)
+	case *events.MediaRetry:
+		handleMediaRetry(ctx, evt, chatStorageRepo)
 	case *events.AppState:
 		handleAppState(ctx, evt, instance.JID(), client)
 	case *events.GroupInfo:

@@ -106,6 +106,19 @@ type SyncHistoryResponse struct {
 	OldestMsgID string `json:"oldest_message_id"`
 }
 
+// Repair Media operations (re-fetch broken media references without re-pairing)
+type RepairMediaRequest struct {
+	ChatJID string `json:"chat_jid" uri:"chat_jid"`
+	Limit   int    `json:"limit"`
+}
+
+type RepairMediaResponse struct {
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	ChatJID   string `json:"chat_jid"`
+	Requested int    `json:"requested"`
+}
+
 // Archive Chat operations
 type ArchiveChatRequest struct {
 	ChatJID  string `json:"chat_jid" uri:"chat_jid"`

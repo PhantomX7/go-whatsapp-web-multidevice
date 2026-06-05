@@ -162,6 +162,7 @@
         <chat-pin-manager></chat-pin-manager>
         <chat-disappearing-manager></chat-disappearing-manager>
         <chat-sync-history></chat-sync-history>
+        <chat-repair-media></chat-repair-media>
         <chat-list></chat-list>
         <chat-messages></chat-messages>
     </div>
@@ -248,6 +249,7 @@
     import ChatPinManager from "{{ .AppBasePath }}/components/ChatPinManager.js";
     import ChatDisappearingManager from "{{ .AppBasePath }}/components/ChatDisappearingManager.js";
     import ChatSyncHistory from "{{ .AppBasePath }}/components/ChatSyncHistory.js";
+    import ChatRepairMedia from "{{ .AppBasePath }}/components/ChatRepairMedia.js";
     import ChatList from "{{ .AppBasePath }}/components/ChatList.js";
     import ChatMessages from "{{ .AppBasePath }}/components/ChatMessages.js";
     import DeviceManager from "{{ .AppBasePath }}/components/DeviceManager.js";
@@ -279,7 +281,7 @@
             GroupList, GroupCreate, GroupJoinWithLink, GroupInfoFromLink, GroupAddParticipants, GroupSetPhoto, GroupSetName, GroupSetLocked, GroupSetAnnounce, GroupSetTopic, GroupGetInviteLink, GroupInfo,
             NewsletterList,
             AccountAvatar, AccountUserInfo, AccountPrivacy, AccountChangeAvatar, AccountContact, AccountChangePushName, AccountUserCheck, AccountBusinessProfile,
-            ChatPinManager, ChatDisappearingManager, ChatSyncHistory, ChatList, ChatMessages,
+            ChatPinManager, ChatDisappearingManager, ChatSyncHistory, ChatRepairMedia, ChatList, ChatMessages,
             DeviceManager
         },
         delimiters: ['[[', ']]'],

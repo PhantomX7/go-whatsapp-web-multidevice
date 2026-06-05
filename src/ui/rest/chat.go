@@ -21,6 +21,7 @@ func InitRestChat(app fiber.Router, service domainChat.IChatUsecase) Chat {
 	app.Post("/chat/:chat_jid/disappearing", rest.SetDisappearingTimer)
 	app.Post("/chat/:chat_jid/archive", rest.ArchiveChat)
 	app.Post("/chat/:chat_jid/sync", rest.SyncHistory)
+	app.Post("/chat/:chat_jid/media/repair", rest.RepairMedia)
 
 	return rest
 }
@@ -161,6 +162,37 @@ func (controller *Chat) SyncHistory(c *fiber.Ctx) error {
 	}
 
 	response, err := controller.Service.SyncHistory(whatsapp.ContextWithDevice(c.UserContext(), getDeviceFromCtx(c)), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Message,
+		Results: response,
+	})
+}
+
+func (controller *Chat) RepairMedia(c *fiber.Ctx) error {
+	var request domainChat.RepairMediaRequest
+
+	// Parse path parameter
+	request.ChatJID = c.Params("chat_jid")
+
+	// Parse optional JSON body (limit). An empty body is allowed; limit defaults in validation.
+	if len(c.Body()) > 0 {
+		if err := c.BodyParser(&request); err != nil {
+			return c.Status(400).JSON(utils.ResponseData{
+				Status:  400,
+				Code:    "BAD_REQUEST",
+				Message: "Invalid request body",
+				Results: nil,
+			})
+		}
+		// BodyParser overwrites ChatJID from the body if present; restore the path param.
+		request.ChatJID = c.Params("chat_jid")
+	}
+
+	response, err := controller.Service.RepairMedia(whatsapp.ContextWithDevice(c.UserContext(), getDeviceFromCtx(c)), request)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
