@@ -257,6 +257,7 @@ func processConversationMessages(ctx context.Context, data *waHistorySync.Histor
 				MediaType:     mediaType,
 				Filename:      filename,
 				URL:           url,
+				DirectPath:    utils.ExtractMediaDirectPath(msg.GetMessage()),
 				MediaKey:      mediaKey,
 				FileSHA256:    fileSHA256,
 				FileEncSHA256: fileEncSHA256,

@@ -299,6 +299,30 @@ func ExtractMediaInfo(msg *waE2E.Message) (mediaType string, filename string, ur
 	return "", "", "", nil, nil, nil, 0
 }
 
+// ExtractMediaDirectPath returns the media directPath for whichever media
+// sub-message is present. whatsmeow's Download requires directPath (not the URL)
+// to fetch media, so it must be persisted alongside the other media fields.
+func ExtractMediaDirectPath(msg *waE2E.Message) string {
+	if msg == nil {
+		return ""
+	}
+	switch {
+	case msg.GetImageMessage() != nil:
+		return msg.GetImageMessage().GetDirectPath()
+	case msg.GetVideoMessage() != nil:
+		return msg.GetVideoMessage().GetDirectPath()
+	case msg.GetPtvMessage() != nil:
+		return msg.GetPtvMessage().GetDirectPath()
+	case msg.GetAudioMessage() != nil:
+		return msg.GetAudioMessage().GetDirectPath()
+	case msg.GetDocumentMessage() != nil:
+		return msg.GetDocumentMessage().GetDirectPath()
+	case msg.GetStickerMessage() != nil:
+		return msg.GetStickerMessage().GetDirectPath()
+	}
+	return ""
+}
+
 // ExtractContextInfo returns the ContextInfo from whichever message sub-type
 // is present. Returns nil when the message has no ContextInfo.
 func ExtractContextInfo(msg *waE2E.Message) *waE2E.ContextInfo {

@@ -254,6 +254,60 @@ func TestRepairChatLastMessageTimesFixesRegressedChats(t *testing.T) {
 	}
 }
 
+func TestMediaDirectPathRoundTrips(t *testing.T) {
+	repo := newTestSQLiteRepository(t)
+	deviceID := "device-a@s.whatsapp.net"
+	chatJID := "628123456789@s.whatsapp.net"
+	ts := time.Date(2026, time.May, 16, 8, 0, 0, 0, time.UTC)
+
+	// StoreChat first to satisfy listing; then store a media message via StoreMessage.
+	if err := repo.StoreChat(&domainChatStorage.Chat{DeviceID: deviceID, JID: chatJID, Name: chatJID, LastMessageTime: ts}); err != nil {
+		t.Fatalf("store chat: %v", err)
+	}
+	if err := repo.StoreMessage(&domainChatStorage.Message{
+		ID:         "img-1",
+		ChatJID:    chatJID,
+		DeviceID:   deviceID,
+		Sender:     "628999999999@s.whatsapp.net",
+		Content:    "",
+		Timestamp:  ts,
+		MediaType:  "image",
+		URL:        "https://mmg.whatsapp.net/v/t62.7118-24/abc.enc",
+		DirectPath: "/v/t62.7118-24/abc.enc?ccb=11-4",
+	}); err != nil {
+		t.Fatalf("store message: %v", err)
+	}
+
+	// Via single-row lookup (used by the download endpoint).
+	got, err := repo.GetMessageByID("img-1")
+	if err != nil || got == nil {
+		t.Fatalf("get message by id: %v", err)
+	}
+	if got.DirectPath != "/v/t62.7118-24/abc.enc?ccb=11-4" {
+		t.Fatalf("direct_path not persisted via StoreMessage: got %q", got.DirectPath)
+	}
+
+	// Via batch insert/update path (used by history sync).
+	if err := repo.StoreMessagesBatch([]*domainChatStorage.Message{{
+		ID:         "img-2",
+		ChatJID:    chatJID,
+		DeviceID:   deviceID,
+		Sender:     "628999999999@s.whatsapp.net",
+		Timestamp:  ts.Add(time.Minute),
+		MediaType:  "video",
+		DirectPath: "/v/t62.7118-24/def.enc?ccb=11-4",
+	}}); err != nil {
+		t.Fatalf("store batch: %v", err)
+	}
+	got2, err := repo.GetMessageByID("img-2")
+	if err != nil || got2 == nil {
+		t.Fatalf("get batch message: %v", err)
+	}
+	if got2.DirectPath != "/v/t62.7118-24/def.enc?ccb=11-4" {
+		t.Fatalf("direct_path not persisted via StoreMessagesBatch: got %q", got2.DirectPath)
+	}
+}
+
 func TestStoreSentMessageWithContextRequiresDeviceInContext(t *testing.T) {
 	repo := newTestSQLiteRepository(t)
 	deviceID := "6289605618749@s.whatsapp.net"
