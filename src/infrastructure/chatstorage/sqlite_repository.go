@@ -577,15 +577,12 @@ func (r *SQLiteRepository) DeleteReaction(messageID, reactorJID, deviceID string
 }
 
 // GetMessages retrieves messages with filtering
-func (r *SQLiteRepository) GetMessages(filter *domainChatStorage.MessageFilter) ([]*domainChatStorage.Message, error) {
-	// Require device_id for data isolation - fail fast if missing
-	if filter.DeviceID == "" {
-		return nil, fmt.Errorf("device_id is required for message queries (data isolation)")
-	}
-
-	var conditions []string
-	var args []any
-
+// buildMessageFilterQuery builds the shared WHERE conditions (and their bound
+// args) for message queries, so GetMessages and CountMessages always apply the
+// exact same filter — otherwise pagination totals drift from the rows actually
+// returned. LIMIT/OFFSET are pagination concerns left to the caller and are not
+// included here.
+func (r *SQLiteRepository) buildMessageFilterQuery(filter *domainChatStorage.MessageFilter) (conditions []string, args []any) {
 	conditions = append(conditions, "chat_jid = ?")
 	args = append(args, filter.ChatJID)
 
@@ -611,6 +608,22 @@ func (r *SQLiteRepository) GetMessages(filter *domainChatStorage.MessageFilter) 
 		conditions = append(conditions, "is_from_me = ?")
 		args = append(args, *filter.IsFromMe)
 	}
+
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		conditions = append(conditions, "LOWER(content) LIKE ?")
+		args = append(args, "%"+strings.ToLower(search)+"%")
+	}
+
+	return conditions, args
+}
+
+func (r *SQLiteRepository) GetMessages(filter *domainChatStorage.MessageFilter) ([]*domainChatStorage.Message, error) {
+	// Require device_id for data isolation - fail fast if missing
+	if filter.DeviceID == "" {
+		return nil, fmt.Errorf("device_id is required for message queries (data isolation)")
+	}
+
+	conditions, args := r.buildMessageFilterQuery(filter)
 
 	query := `
 		SELECT id, chat_jid, device_id, sender, content, timestamp, is_from_me,
@@ -1073,6 +1086,20 @@ func (r *SQLiteRepository) scanChatwootMessageLink(scanner interface{ Scan(...an
 		&link.IsRead, &link.CreatedAt, &link.UpdatedAt,
 	)
 	return link, err
+}
+
+// CountMessages returns the number of messages matching the given filter. It
+// reuses the exact same conditions as GetMessages (minus LIMIT/OFFSET) so the
+// pagination total reflects the rows a paged GetMessages call would return.
+func (r *SQLiteRepository) CountMessages(filter *domainChatStorage.MessageFilter) (int64, error) {
+	// Require device_id for data isolation - fail fast if missing
+	if filter.DeviceID == "" {
+		return 0, fmt.Errorf("device_id is required for message queries (data isolation)")
+	}
+
+	conditions, args := r.buildMessageFilterQuery(filter)
+	query := "SELECT COUNT(*) FROM messages WHERE " + strings.Join(conditions, " AND ")
+	return r.getCount(query, args...)
 }
 
 // GetChatMessageCount returns the number of messages in a chat

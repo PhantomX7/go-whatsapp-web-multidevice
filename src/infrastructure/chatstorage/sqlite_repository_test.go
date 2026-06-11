@@ -396,6 +396,83 @@ func TestStoreSentMessageWithContextRequiresDeviceInContext(t *testing.T) {
 	}
 }
 
+// TestCountMessagesMatchesFilteredResults pins the pagination-total fix: the
+// count must apply the exact same filter as GetMessages (date range, content
+// search, device isolation) and compose them — otherwise the UI reports the
+// whole chat's size as the "match" count (e.g. "139 matches" for a handful of
+// results).
+func TestCountMessagesMatchesFilteredResults(t *testing.T) {
+	repo := newTestSQLiteRepository(t)
+	deviceID := "device-a@s.whatsapp.net"
+	otherDeviceID := "device-b@s.whatsapp.net"
+	chatJID := "628123456789@s.whatsapp.net"
+	day1 := time.Date(2026, time.June, 9, 0, 0, 0, 0, time.UTC)
+	day2 := time.Date(2026, time.June, 10, 0, 0, 0, 0, time.UTC)
+
+	seedChatMessage(t, repo, deviceID, chatJID, "msg-1", "Pesan pagi hari", day1.Add(9*time.Hour))
+	seedChatMessage(t, repo, deviceID, chatJID, "msg-2", "bosspack ke tangerang", day1.Add(14*time.Hour))
+	seedChatMessage(t, repo, deviceID, chatJID, "msg-3", "ok pak terimakasih", day2.Add(10*time.Hour))
+	// Another device's message in the same chat/day with the search term must
+	// never be counted for deviceID.
+	seedChatMessage(t, repo, otherDeviceID, chatJID, "msg-other", "bosspack lain", day1.Add(12*time.Hour))
+
+	day1End := day1.Add(24*time.Hour - time.Second)
+	searchTerm := "BOSSPACK" // upper-case to assert case-insensitive matching
+
+	cases := []struct {
+		name   string
+		filter *domainChatStorage.MessageFilter
+		want   int64
+	}{
+		{
+			name:   "no content/time filter counts the device's whole chat",
+			filter: &domainChatStorage.MessageFilter{DeviceID: deviceID, ChatJID: chatJID},
+			want:   3,
+		},
+		{
+			name:   "date range counts only that day",
+			filter: &domainChatStorage.MessageFilter{DeviceID: deviceID, ChatJID: chatJID, StartTime: &day1, EndTime: &day1End},
+			want:   2,
+		},
+		{
+			name:   "search counts only matching content, device-isolated",
+			filter: &domainChatStorage.MessageFilter{DeviceID: deviceID, ChatJID: chatJID, Search: searchTerm},
+			want:   1,
+		},
+		{
+			name:   "search composes with date range",
+			filter: &domainChatStorage.MessageFilter{DeviceID: deviceID, ChatJID: chatJID, Search: searchTerm, StartTime: &day2, EndTime: &day2},
+			want:   0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			count, err := repo.CountMessages(tc.filter)
+			if err != nil {
+				t.Fatalf("count messages: %v", err)
+			}
+			if count != tc.want {
+				t.Fatalf("CountMessages = %d, want %d", count, tc.want)
+			}
+			// The count must equal the number of rows a paged GetMessages call
+			// returns for the same filter — that invariant is the whole point.
+			messages, err := repo.GetMessages(tc.filter)
+			if err != nil {
+				t.Fatalf("get messages: %v", err)
+			}
+			if int64(len(messages)) != tc.want {
+				t.Fatalf("GetMessages returned %d rows, want %d (count drift from total)", len(messages), tc.want)
+			}
+		})
+	}
+
+	// device_id is required for data isolation, mirroring GetMessages.
+	if _, err := repo.CountMessages(&domainChatStorage.MessageFilter{ChatJID: chatJID}); err == nil {
+		t.Fatal("expected error when device_id is missing")
+	}
+}
+
 func seedChatMessage(t *testing.T, repo *SQLiteRepository, deviceID, chatJID, messageID, content string, timestamp time.Time) {
 	t.Helper()
 	if err := repo.StoreChat(&domainChatStorage.Chat{

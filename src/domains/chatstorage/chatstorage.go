@@ -116,6 +116,10 @@ type MessageFilter struct {
 	EndTime   *time.Time
 	MediaOnly bool
 	IsFromMe  *bool
+	// Search is a case-insensitive substring matched against message content.
+	// Empty means no content filtering. It composes with the other fields, so a
+	// search can be scoped to a time range, media, or sender.
+	Search string
 }
 
 // ChatFilter represents query filters for chats

@@ -90,6 +90,10 @@ func (r *chatUsecaseRepoStub) GetMessages(*domainChatStorage.MessageFilter) ([]*
 	return r.messages, nil
 }
 
+func (r *chatUsecaseRepoStub) CountMessages(*domainChatStorage.MessageFilter) (int64, error) {
+	return int64(len(r.messages)), nil
+}
+
 func (r *chatUsecaseRepoStub) GetChatMessageCount(string) (int64, error) {
 	return int64(len(r.messages)), nil
 }

@@ -33,6 +33,7 @@ type IChatStorageRepository interface {
 	UpdateMessageMediaReference(deviceID, id, chatJID, directPath string) error         // Refresh a message's direct_path after a media retry
 	GetMessageEdits(originalMessageID, deviceID string) ([]*MessageEdit, error)
 	GetMessages(filter *MessageFilter) ([]*Message, error)
+	CountMessages(filter *MessageFilter) (int64, error)                                  // Count of messages matching the same filter as GetMessages (for accurate pagination totals)
 	SearchMessages(deviceID, chatJID, searchText string, limit int) ([]*Message, error) // Database-level search with device isolation
 	DeleteMessage(id, chatJID string) error
 	DeleteMessageByDevice(deviceID, id, chatJID string) error

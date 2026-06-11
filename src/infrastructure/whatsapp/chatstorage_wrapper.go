@@ -142,6 +142,13 @@ func (r *deviceChatStorage) GetMessages(filter *domainChatStorage.MessageFilter)
 	return r.base.GetMessages(filter)
 }
 
+func (r *deviceChatStorage) CountMessages(filter *domainChatStorage.MessageFilter) (int64, error) {
+	if filter != nil && filter.DeviceID == "" {
+		filter.DeviceID = r.deviceID
+	}
+	return r.base.CountMessages(filter)
+}
+
 func (r *deviceChatStorage) SearchMessages(deviceID, chatJID, searchText string, limit int) ([]*domainChatStorage.Message, error) {
 	targetDeviceID := deviceID
 	if targetDeviceID == "" {

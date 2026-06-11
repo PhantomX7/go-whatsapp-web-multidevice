@@ -137,13 +137,17 @@ func (service serviceChat) GetChatMessages(ctx context.Context, request domainCh
 		return response, fmt.Errorf("chat with JID %s not found", request.ChatJID)
 	}
 
-	// Create message filter from request
+	// Create message filter from request. DeviceID is required for data
+	// isolation; Search composes with the time/media/sender filters so a text
+	// search can be scoped to a date range rather than overriding it.
 	filter := &domainChatStorage.MessageFilter{
+		DeviceID:  deviceID,
 		ChatJID:   request.ChatJID,
 		Limit:     request.Limit,
 		Offset:    request.Offset,
 		MediaOnly: request.MediaOnly,
 		IsFromMe:  request.IsFromMe,
+		Search:    request.Search,
 	}
 
 	// Parse time filters if provided
@@ -163,29 +167,19 @@ func (service serviceChat) GetChatMessages(ctx context.Context, request domainCh
 		filter.EndTime = &endTime
 	}
 
-	// Get messages from storage
-	var messages []*domainChatStorage.Message
-	if request.Search != "" {
-		// Use search functionality if search query is provided
-		messages, err = service.chatStorageRepo.SearchMessages(deviceID, request.ChatJID, request.Search, request.Limit)
-		if err != nil {
-			logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to search messages")
-			return response, err
-		}
-	} else {
-		// Use regular filter with device_id for data isolation
-		filter.DeviceID = deviceID
-		messages, err = service.chatStorageRepo.GetMessages(filter)
-		if err != nil {
-			logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to get messages")
-			return response, err
-		}
+	// Get the page of messages matching the filter (search included).
+	messages, err := service.chatStorageRepo.GetMessages(filter)
+	if err != nil {
+		logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to get messages")
+		return response, err
 	}
 
-	// Get total message count for pagination
-	totalCount, err := service.chatStorageRepo.GetChatMessageCount(request.ChatJID)
+	// The pagination total must apply the SAME filter as the page query —
+	// otherwise it reports the whole chat's message count instead of the number
+	// of matches, and the UI shows e.g. "139 matches" for a handful of results.
+	totalCount, err := service.chatStorageRepo.CountMessages(filter)
 	if err != nil {
-		logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to get message count")
+		logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to count messages")
 		// Continue with partial data
 		totalCount = 0
 	}
