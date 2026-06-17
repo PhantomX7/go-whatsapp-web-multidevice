@@ -108,7 +108,12 @@ type DeviceRecord struct {
 
 // MessageFilter represents query filters for messages
 type MessageFilter struct {
-	DeviceID  string
+	DeviceID string
+	// DeviceIDs, when non-empty, matches rows stored under ANY of these device
+	// keys (in addition to DeviceID). A device's data can be persisted under
+	// either its custom id or its JID depending on when it was first synced, so
+	// reads pass both keys to avoid missing chats/messages after a disconnect.
+	DeviceIDs []string
 	ChatJID   string
 	Limit     int
 	Offset    int
@@ -124,7 +129,11 @@ type MessageFilter struct {
 
 // ChatFilter represents query filters for chats
 type ChatFilter struct {
-	DeviceID   string
+	DeviceID string
+	// DeviceIDs, when non-empty, matches chats stored under ANY of these device
+	// keys (in addition to DeviceID). See MessageFilter.DeviceIDs for why a
+	// device can have data under more than one key.
+	DeviceIDs  []string
 	Limit      int
 	Offset     int
 	SearchName string

@@ -267,6 +267,51 @@ func (r *SQLiteRepository) GetMessageEdits(originalMessageID, deviceID string) (
 
 // buildChatFilterQuery constructs the shared WHERE clause and JOIN for chat filter queries.
 // Returns the query fragment (starting from JOIN/WHERE), conditions, and args.
+// dedupeDeviceKeys returns the unique non-empty device keys, primary first.
+func dedupeDeviceKeys(primary string, keys []string) []string {
+	seen := make(map[string]struct{}, len(keys)+1)
+	out := make([]string, 0, len(keys)+1)
+	add := func(k string) {
+		if k == "" {
+			return
+		}
+		if _, ok := seen[k]; ok {
+			return
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	add(primary)
+	for _, k := range keys {
+		add(k)
+	}
+	return out
+}
+
+// deviceCondition builds a WHERE fragment matching `column` against one or more
+// device keys. A device's chat data may be persisted under either its custom id
+// or its JID (depending on when it first synced), so reads match every known
+// key to avoid missing rows after a disconnect. Returns an empty condition when
+// no keys are supplied. Keys are distinct per device, so matching several keys
+// never crosses the data-isolation boundary into another device's rows.
+func deviceCondition(column, primary string, keys []string) (string, []any) {
+	ids := dedupeDeviceKeys(primary, keys)
+	switch len(ids) {
+	case 0:
+		return "", nil
+	case 1:
+		return column + " = ?", []any{ids[0]}
+	default:
+		placeholders := make([]string, len(ids))
+		args := make([]any, len(ids))
+		for i, id := range ids {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+		return column + " IN (" + strings.Join(placeholders, ", ") + ")", args
+	}
+}
+
 func (r *SQLiteRepository) buildChatFilterQuery(filter *domainChatStorage.ChatFilter) (joinClause string, conditions []string, args []any) {
 	if filter.SearchName != "" {
 		conditions = append(conditions, "c.name LIKE ?")
@@ -278,9 +323,9 @@ func (r *SQLiteRepository) buildChatFilterQuery(filter *domainChatStorage.ChatFi
 		conditions = append(conditions, `EXISTS (SELECT 1 FROM messages m WHERE m.chat_jid = c.jid AND m.device_id = c.device_id AND m.media_type NOT IN ('', 'call'))`)
 	}
 
-	if filter.DeviceID != "" {
-		conditions = append(conditions, "c.device_id = ?")
-		args = append(args, filter.DeviceID)
+	if cond, cargs := deviceCondition("c.device_id", filter.DeviceID, filter.DeviceIDs); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, cargs...)
 	}
 
 	if filter.IsArchived != nil {
@@ -586,9 +631,12 @@ func (r *SQLiteRepository) buildMessageFilterQuery(filter *domainChatStorage.Mes
 	conditions = append(conditions, "chat_jid = ?")
 	args = append(args, filter.ChatJID)
 
-	// Filter by device_id to ensure data isolation between devices
-	conditions = append(conditions, "device_id = ?")
-	args = append(args, filter.DeviceID)
+	// Filter by device_id to ensure data isolation between devices. A device's
+	// messages may live under its custom id or its JID, so match all known keys.
+	if cond, cargs := deviceCondition("device_id", filter.DeviceID, filter.DeviceIDs); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, cargs...)
+	}
 
 	if filter.StartTime != nil {
 		conditions = append(conditions, "timestamp >= ?")
@@ -619,7 +667,7 @@ func (r *SQLiteRepository) buildMessageFilterQuery(filter *domainChatStorage.Mes
 
 func (r *SQLiteRepository) GetMessages(filter *domainChatStorage.MessageFilter) ([]*domainChatStorage.Message, error) {
 	// Require device_id for data isolation - fail fast if missing
-	if filter.DeviceID == "" {
+	if filter.DeviceID == "" && len(filter.DeviceIDs) == 0 {
 		return nil, fmt.Errorf("device_id is required for message queries (data isolation)")
 	}
 
@@ -667,7 +715,7 @@ func (r *SQLiteRepository) GetMessages(filter *domainChatStorage.MessageFilter) 
 		return nil, err
 	}
 
-	if err := r.loadMessageReactions(filter.DeviceID, filter.ChatJID, messages); err != nil {
+	if err := r.loadMessageReactions(dedupeDeviceKeys(filter.DeviceID, filter.DeviceIDs), filter.ChatJID, messages); err != nil {
 		return nil, err
 	}
 
@@ -735,15 +783,22 @@ func (r *SQLiteRepository) SearchMessages(deviceID, chatJID, searchText string, 
 		return nil, fmt.Errorf("error iterating messages: %w", err)
 	}
 
-	if err := r.loadMessageReactions(deviceID, chatJID, messages); err != nil {
+	if err := r.loadMessageReactions([]string{deviceID}, chatJID, messages); err != nil {
 		return nil, fmt.Errorf("failed to load message reactions: %w", err)
 	}
 
 	return messages, nil
 }
 
-func (r *SQLiteRepository) loadMessageReactions(deviceID, chatJID string, messages []*domainChatStorage.Message) error {
+func (r *SQLiteRepository) loadMessageReactions(deviceIDs []string, chatJID string, messages []*domainChatStorage.Message) error {
 	if len(messages) == 0 {
+		return nil
+	}
+
+	// Match reactions under any of the device's known keys (custom id and/or
+	// JID), mirroring how messages themselves are matched.
+	devCond, devArgs := deviceCondition("device_id", "", deviceIDs)
+	if devCond == "" {
 		return nil
 	}
 
@@ -766,8 +821,9 @@ func (r *SQLiteRepository) loadMessageReactions(deviceID, chatJID string, messag
 
 		batchIDs := messageIDs[start:end]
 		placeholders := make([]string, 0, len(batchIDs))
-		args := make([]any, 0, len(batchIDs)+2)
-		args = append(args, deviceID, chatJID)
+		args := make([]any, 0, len(batchIDs)+len(devArgs)+1)
+		args = append(args, devArgs...)
+		args = append(args, chatJID)
 		for _, messageID := range batchIDs {
 			placeholders = append(placeholders, "?")
 			args = append(args, messageID)
@@ -777,7 +833,7 @@ func (r *SQLiteRepository) loadMessageReactions(deviceID, chatJID string, messag
 			SELECT message_id, chat_jid, device_id, reactor_jid, emoji, is_from_me,
 				reaction_timestamp, created_at, updated_at
 			FROM message_reactions
-			WHERE device_id = ? AND chat_jid = ? AND message_id IN (` + strings.Join(placeholders, ",") + `)
+			WHERE ` + devCond + ` AND chat_jid = ? AND message_id IN (` + strings.Join(placeholders, ",") + `)
 			ORDER BY reaction_timestamp ASC, created_at ASC
 		`
 
@@ -1093,7 +1149,7 @@ func (r *SQLiteRepository) scanChatwootMessageLink(scanner interface{ Scan(...an
 // pagination total reflects the rows a paged GetMessages call would return.
 func (r *SQLiteRepository) CountMessages(filter *domainChatStorage.MessageFilter) (int64, error) {
 	// Require device_id for data isolation - fail fast if missing
-	if filter.DeviceID == "" {
+	if filter.DeviceID == "" && len(filter.DeviceIDs) == 0 {
 		return 0, fmt.Errorf("device_id is required for message queries (data isolation)")
 	}
 

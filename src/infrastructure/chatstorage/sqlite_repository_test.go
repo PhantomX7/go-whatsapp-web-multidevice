@@ -533,3 +533,73 @@ func countMessageReactions(t *testing.T, repo *SQLiteRepository) int {
 	}
 	return count
 }
+
+// TestReadsMatchDataStoredUnderAliasDeviceKey reproduces the "chats vanish when
+// disconnected" bug: a device's chats/messages were persisted under its custom
+// id (e.g. "Frey") because that was the device key at first-sync time, but reads
+// now resolve the device to its JID. A read scoped to ONLY the JID misses the
+// rows; passing both keys (DeviceIDs) must return them — without leaking another
+// device's data.
+func TestReadsMatchDataStoredUnderAliasDeviceKey(t *testing.T) {
+	repo := newTestSQLiteRepository(t)
+	const (
+		aliasID = "Frey"
+		jid     = "62817202010@s.whatsapp.net"
+		otherID = "62899999999@s.whatsapp.net"
+	)
+	chatJID := "628123456789@s.whatsapp.net"
+	now := time.Date(2026, time.June, 5, 8, 0, 0, 0, time.UTC)
+
+	// Frey's data lives under its custom id; an unrelated device under otherID.
+	seedChatMessage(t, repo, aliasID, chatJID, "msg-frey", "hello from frey", now)
+	seedChatMessage(t, repo, otherID, "628000000000@s.whatsapp.net", "msg-other", "other device msg", now)
+
+	keys := []string{jid, aliasID}
+
+	// Control: querying by the JID alone misses the alias-keyed rows (the bug).
+	if chats, err := repo.GetChats(&domainChatStorage.ChatFilter{DeviceID: jid, Limit: 10}); err != nil {
+		t.Fatalf("get chats by jid: %v", err)
+	} else if len(chats) != 0 {
+		t.Fatalf("control: expected 0 chats under jid-only, got %d", len(chats))
+	}
+
+	// Fix: querying by both keys returns Frey's chat and message.
+	chats, err := repo.GetChats(&domainChatStorage.ChatFilter{DeviceID: jid, DeviceIDs: keys, Limit: 10})
+	if err != nil {
+		t.Fatalf("get chats by keys: %v", err)
+	}
+	if len(chats) != 1 || chats[0].JID != chatJID {
+		t.Fatalf("expected Frey's single chat, got %d chats", len(chats))
+	}
+
+	count, err := repo.GetFilteredChatCount(&domainChatStorage.ChatFilter{DeviceID: jid, DeviceIDs: keys})
+	if err != nil {
+		t.Fatalf("filtered chat count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected filtered chat count 1, got %d", count)
+	}
+
+	msgs, err := repo.GetMessages(&domainChatStorage.MessageFilter{DeviceID: jid, DeviceIDs: keys, ChatJID: chatJID, Limit: 10})
+	if err != nil {
+		t.Fatalf("get messages by keys: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].ID != "msg-frey" {
+		t.Fatalf("expected Frey's single message, got %d", len(msgs))
+	}
+
+	msgCount, err := repo.CountMessages(&domainChatStorage.MessageFilter{DeviceID: jid, DeviceIDs: keys, ChatJID: chatJID})
+	if err != nil {
+		t.Fatalf("count messages by keys: %v", err)
+	}
+	if msgCount != 1 {
+		t.Fatalf("expected message count 1, got %d", msgCount)
+	}
+
+	// Isolation: the other device's chat must never be returned by Frey's keys.
+	for _, c := range chats {
+		if c.JID == "628000000000@s.whatsapp.net" {
+			t.Fatalf("data isolation broken: other device's chat leaked into Frey's results")
+		}
+	}
+}

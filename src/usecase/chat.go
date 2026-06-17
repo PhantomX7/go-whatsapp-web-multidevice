@@ -62,6 +62,7 @@ func (service serviceChat) ListChats(ctx context.Context, request domainChat.Lis
 	// Create filter from request
 	filter := &domainChatStorage.ChatFilter{
 		DeviceID:   deviceIDFromContext(ctx),
+		DeviceIDs:  deviceKeysFromContext(ctx),
 		Limit:      request.Limit,
 		Offset:     request.Offset,
 		SearchName: request.Search,
@@ -124,14 +125,27 @@ func (service serviceChat) GetChatMessages(ctx context.Context, request domainCh
 	}
 
 	deviceID := deviceIDFromContext(ctx)
-	if deviceID == "" {
+	deviceKeys := deviceKeysFromContext(ctx)
+	if deviceID == "" && len(deviceKeys) == 0 {
 		return response, fmt.Errorf("device identification required")
 	}
 
-	chat, err := service.chatStorageRepo.GetChatByDevice(deviceID, request.ChatJID)
-	if err != nil {
-		logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to get chat info")
-		return response, err
+	// The chat may have been stored under the device's custom id or its JID, so
+	// look it up under each known key until found (see deviceKeysFromContext).
+	lookupKeys := deviceKeys
+	if len(lookupKeys) == 0 {
+		lookupKeys = []string{deviceID}
+	}
+	var chat *domainChatStorage.Chat
+	for _, key := range lookupKeys {
+		chat, err = service.chatStorageRepo.GetChatByDevice(key, request.ChatJID)
+		if err != nil {
+			logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to get chat info")
+			return response, err
+		}
+		if chat != nil {
+			break
+		}
 	}
 	if chat == nil {
 		return response, fmt.Errorf("chat with JID %s not found", request.ChatJID)
@@ -142,6 +156,7 @@ func (service serviceChat) GetChatMessages(ctx context.Context, request domainCh
 	// search can be scoped to a date range rather than overriding it.
 	filter := &domainChatStorage.MessageFilter{
 		DeviceID:  deviceID,
+		DeviceIDs: deviceKeys,
 		ChatJID:   request.ChatJID,
 		Limit:     request.Limit,
 		Offset:    request.Offset,
@@ -399,6 +414,31 @@ func deviceIDFromContext(ctx context.Context) string {
 		return inst.ID()
 	}
 	return ""
+}
+
+// deviceKeysFromContext returns every device key the current device's data may
+// be stored under — both its JID and its custom id. Chat rows can be persisted
+// under either depending on when the device first synced relative to its JID
+// being known, so reads match all keys to avoid an empty chat list after a
+// disconnect (the keys are distinct per device, so this never crosses devices).
+func deviceKeysFromContext(ctx context.Context) []string {
+	inst, ok := whatsapp.DeviceFromContext(ctx)
+	if !ok || inst == nil {
+		return nil
+	}
+	keys := make([]string, 0, 2)
+	seen := make(map[string]struct{}, 2)
+	for _, k := range []string{inst.JID(), inst.ID()} {
+		if k == "" {
+			continue
+		}
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		seen[k] = struct{}{}
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func (service serviceChat) PinChat(ctx context.Context, request domainChat.PinChatRequest) (response domainChat.PinChatResponse, err error) {
