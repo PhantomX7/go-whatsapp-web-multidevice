@@ -39,7 +39,7 @@ func handler(ctx context.Context, instance *DeviceInstance, rawEvt any) {
 	case *events.PairSuccess:
 		handlePairSuccess(ctx, evt)
 	case *events.LoggedOut:
-		handleLoggedOut(ctx, instance, chatStorageRepo)
+		handleLoggedOut(ctx, instance)
 	case *events.Connected, *events.PushNameSetting:
 		handleConnectionEvents(ctx, client, instance)
 	case *events.StreamReplaced:
@@ -155,19 +155,19 @@ func handlePairSuccess(ctx context.Context, evt *events.PairSuccess) {
 	syncKeysDevice(ctx, primaryDB, secondaryDB, evt.ID)
 }
 
-func handleLoggedOut(ctx context.Context, instance *DeviceInstance, chatStorageRepo domainChatStorage.IChatStorageRepository) {
-	logrus.Warnf("[REMOTE_LOGOUT] Received LoggedOut event for device %s - user logged out from phone", instance.ID())
+// handleLoggedOut handles a remote logout — the user unlinked this device from
+// their phone, or WhatsApp invalidated the session. The stored chat history is
+// intentionally PRESERVED: only the live session ends. Past chats stay readable
+// offline and reconcile automatically if the device is paired again under the
+// same JID. (This previously truncated chat storage for ALL devices, so a single
+// unlink wiped every device's history — see TruncateAllChats, which is unscoped.)
+func handleLoggedOut(_ context.Context, instance *DeviceInstance) {
+	logrus.Warnf("[REMOTE_LOGOUT] Received LoggedOut event for device %s - session ended; preserving stored chat history", instance.ID())
 
 	if client := instance.GetClient(); client != nil {
 		client.Disconnect()
 	}
 	instance.SetState(domainDevice.DeviceStateDisconnected)
-
-	if chatStorageRepo != nil {
-		if err := chatStorageRepo.TruncateAllDataWithLogging("REMOTE_LOGOUT"); err != nil {
-			logrus.Errorf("[REMOTE_LOGOUT] Failed to truncate chat storage: %v", err)
-		}
-	}
 
 	deviceID := instance.ID()
 
@@ -175,7 +175,7 @@ func handleLoggedOut(ctx context.Context, instance *DeviceInstance, chatStorageR
 
 	websocket.Broadcast <- websocket.BroadcastMessage{
 		Code:    "LOGOUT_COMPLETE",
-		Message: "Remote logout cleanup completed - device removed from server",
+		Message: "Remote logout handled - session ended, chat history preserved",
 		Result:  map[string]string{"device_id": deviceID},
 	}
 }
